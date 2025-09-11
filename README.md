@@ -9,7 +9,7 @@ Enjoy, et bon stage à tous !
 Les fichiers nécessaires pour le fonctionnement du template sont:
 - `logos/partenaire_strategique_img.png`
 - `logos/logo-tps-unistra-court.png`
-- `rapport de stage.cls`
+- `rapport_de_stage.cls`
 
 Un exemple de fichier LaTeX utilisant le template est donné par le fichier `main.tex`
 

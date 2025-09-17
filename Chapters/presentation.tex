@@ -1,13 +1,18 @@
-\subsection{Première sous partie}
+\subsection{Equipe réseau et sécurité du laboratoire de l'UNamur}
 
-\lipsum[1-2]
+L'UNamur est une université pluridisciplinaire hébergeant de nombreux laboratoires. J'ai été accueilli au sein du département d'Informatique de l'UNamur, plus spécifiquement dans l'équipe réseau et sécurité dirigée par Florentin Rochet.
 
-\subsection{Deuxième sous partie}
+Les recherches de Florentin Rochet et de son équipe portent principalement sur comment assurer une sécurité et une confidentialité maximale sur internet en limitant au minimum l'impact de ces sécurités sur les performances du réseau.
 
-\subsubsection{A}
+La majorité des recherches de cette équipe tournent autour du réseau ToR, un réseau dont la cryptographie est distribuée, assurant un anonymat absolu sur internet. Parmi les quelques recherches qui ne sont pas liées à ToR s'insère l'optimisation de Quiche. En effet, le protocole QUIC est conçu avec une attention particulière à la sécurité et offre de nombreux mécanismes pour éviter qu'un agent tiers puisse espionner un utilisateur sur le réseau.
 
-    \lipsum[1-2]
+\subsection{Cloudflare et l'UNamur}
 
-\subsubsection{B}
+\subsubsection{Quiche, une implémentation de QUIC par Cloudflare}
 
-    \lipsum[1-2]
+    Cloudflare est une entreprise privée internationale, spécialisée dans la gestion d'infrastructures réseau. Afin de rester compétitif face à Google ils ont produit cloudflare/quiche, une implémentation du protocole QUIC, qu'ils ont rendu publique afin de permettre à la communauté de proposer des modifications pour la sécurité ou les performances. Ce modèle de développement Open-Source a permis à Florentin Rochet de récupérer le code de Quiche, de le modifier et de le republier sous un autre nom.
+
+\subsubsection{Reverso et Quiceh}
+
+    En 2024, Florentin Rochet proposait QUIC VReverso\up{\cite{draft-reverso}}, une nouvelle version de QUIC modifiant l'entête des paquets QUIC afin de permettre de se passer de la copie du buffer de données dans un buffer d'envoi.
+    Afin d'élaborer cette nouvelle version et afin d'en tester les performances, Florentin Rochet a écrit Quiceh (frochet/quiceh), que l'on peut voir comme Quiche plus Reverso. Quiceh (frochet/quiceh) est construit à partir du code de cloudflare/quiche, qui a été modifié en profondeur pour ajouter le support de QUIC VReverso.

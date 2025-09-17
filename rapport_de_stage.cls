@@ -140,8 +140,8 @@
 
     % Titre du rapport
     \rule{\linewidth}{0.2 mm} \\[0.4 cm]
-    {\Large\bfseries \@title \par} \
-    \rule{\linewidth}{0.2 mm} \\[1.0 cm]
+    {\Large\bfseries \@title} \
+    \rule{\linewidth}{0.2 mm} \\[0.5 cm]
 
     % Nom de l'étudiant
     {\@author \par}
@@ -161,29 +161,26 @@
 
     % Dates
     {\large \dates \par}
-    \vspace{1.5cm}
+    \vspace{0.1cm}
 
     % Bas de page
+    \includegraphics[height=0.13\textheight]{\logoentreprise}\\
+    \vspace{0.5cm}
     \begin{minipage}{0.4\textwidth}
         \begin{flushleft}
-        \emph{\textbf{Organisme d'accueil}}\\
+        \emph{\textbf{Organisme d'accueil :}}\\
             \text{\nomentreprise}\\
-            \includegraphics[width=0.4\textwidth]{\logoentreprise} \\
+            \text{}\\
         \end{flushleft}
     \end{minipage}
     ~
-    \begin{minipage}{0.4\textwidth}
-        \begin{flushright}
-        \emph{\textbf{Tuteur école :}} \\
-        \textsc{\tuteurecole{}} \\
-        \tuteurecolemail{}
-        \end{flushright}
-        \begin{flushright}
-        \emph{\textbf{Tuteur entreprise :}} \\
+    \begin{minipage}{0.3\textwidth}
+        \begin{flushleft}
+        \emph{\textbf{Tuteur :}} \\
         \textsc{\tuteurentreprise} \\
         \tuteurentreprisemail
-        \end{flushright}
-    \end{minipage}\\[2cm]
+        \end{flushleft}
+    \end{minipage}
 
     \vfill
 

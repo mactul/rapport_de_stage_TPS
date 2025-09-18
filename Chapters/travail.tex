@@ -33,9 +33,52 @@ On peut contourner le problème en copiant systématiquement les buffers dans de
 
 Pour mesurer un vrai gain de performance, la seule solution était de trouver un moyen de contourner la queue de cURL lorsqu'on utilise QUIC VReverso. A noter qu'il faut aussi garder l'ancienne queue et l'ancien fonctionnement pour le cas où le pair négocie QUIC V1 plutôt que QUIC VReverso.
 
+En pratique, en mode zéro copie, frochet/quiceh se comporte presque comme la queue de cURL. On peut donc simplement désactiver l'enregistrement dans la queue quand QUIC VReverso a été négocié et changer le moment où la queue est lue pour ne pas récupérer les données depuis la queue, mais depuis frochet/quiceh directement.
+Malheureusement, les données à cet endroit sont encore copiées pour être envoyées à une autre partie de cURL. Pour vraiment faire du zéro copie, il aurait fallu supprimer cette copie, mais cela impliquerait de changer presque l'intégralité de l'architecture de cURL, ce qui n'est pas envisageable, nous avons donc décidé d'en rester là et de mesurer les performances à partir de ce point.
+
+\subsubsection{Mesure du gain de performance}
+
+En théorie, mesurer l'écart de performance est facile, il suffit de télécharger un gros fichier, disons 10 Go avec curl + cloudflare/quiche et de chronométrer le temps pris, puis de faire la même chose avec curl + frochet/quiceh, puis faire la différence des deux temps pour connaître le gain. Idéalement il faut faire les mesures plusieurs fois pour faire une moyenne et avoir une mesure plus précise.
+
+Malheureusement, nous pouvons prévoir avant toute mesure que le gain de performances du zéro copie ne sera pas transcendant, on peut s'attendre à voir entre 2 et 3\% d'amélioration sur le temps total. Mais le temps total qu'on mesure lui dépend d'énormément de facteurs et varie de près de 20\% entre chaque lancement.
+Si on veut obtenir une mesure précise, du gain en performance, il va falloir trouver une meilleure solution que de chronométrer tout le téléchargement.
+
+\vspace{0.5cm}
+
+Sous Linux, il existe un utilitaire nommé $perf$ qui permet de lancer un programme tout en demandant au kernel de mesurer le nombre de cycles de CPUs pris par chaque fonction du programme.
+Grâce à cet utilitaire, il est possible de faire des mesures qui d'une part ne sont plus dépendantes de la fréquence du processeur (qui change en permanence) ou de son utilisation par les autres logiciels sur l'ordinateur de mesure, et qui d'autre part permettent d'isoler très précisément le temps passé dans la fonction que l'on cherche à optimiser.
+
+$perf$ n'est pas un outil facile à utiliser, voici pour référence la commande utilisée pour monitorer cURL:
+
+\begin{center}
+    \begin{lstlisting}[language=bash]
+sudo perf record -e cycles -e sched:sched_switch --switch-events \
+    --sample-cpu -m 8M --aio -z --call-graph dwarf ./curl
+    \end{lstlisting}
+\end{center}
+
+Cette commande génère un fichier $perf.data$ contenant toutes les mesures.
+Pour rendre ce fichier lisible par un humain, nous avons choisi d'utiliser le programme $hotspot$\up{\cite{hotspot}} de KDAB.
+Ce programme permet d'afficher le résultat de la mesure sous la forme d'un flamegraph, ce qui ressemble à ceci:
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/flamegraph_h3.png}
+    \caption{Un flamegraph de curl + frochet/quiceh}
+\end{figure}
+
+Ce graphique est une source immense d'information. On y voit avec une grande précision toutes les portions du code de cURL et de quiceh qui consomment une part du temps CPU.
+Rapidement on peut voir que 13\% du temps est consacré à la réception de messages (la fonction recvmmsg), 12\% du temps est consacré à l'envoi de messages (la fonction sendmsg) et 32\% du temps est consacré au déchiffrement des messages reçus (la fonction quiceh::Connection::recv\_single). Le reste du temps est réparti dans beaucoup de fonctions, chacune de ces fonctions a un impact presque insignifiant, mais ensembles, ces fonctions représentent tout de même 40\% du temps total. Il faut noter qu'une bonne partie de ce temps n'est pas du tout optimisable, par exemple la cryptographie doit être effectuée à un moment et cela prend beaucoup de temps CPU.
+
+En comparant les flamegraphs de QUIC V1 et QUIC VReverso, on observe bien une copie disparaître, mais le coût de cette copie dans le cas de cURL est marginal. Ce qui est beaucoup plus frappant sur ces graphiques, c'est que malgré le fait que l'on télécharge 1 Go de données et que tout ce qu'on envoie se résume aux accusés de réception, on passe autant de temps à envoyer des messages via sendmsg qu'à recevoir des messages via recvmmsg.
+
+\vspace{0.5cm}
+
+Il n'est vraiment pas normal de passer autant de temps à envoyer des accusés de réception qu'à télécharger du contenu utile, il y a donc potentiellement 10\% du temps CPU de cURL qui pourrait être retiré. 10\% de temps CPU sur un programme utilisé des millions de fois par jours comme cURL, cela représente une quantité d'énergie extrêmement importante. Cette découverte va complètement changer la direction que prenait mon stage, jusqu'à sa fin. Nous avons décidé de rediriger nos efforts à réduire l'impact de l'envoi des accusés de réception dans cloudflare/quiche.
+
 \newpage
 
-\subsection{Deuxième sous partie}
+\subsection{Implémentation d'accusés de réception différés dans cloudflare/quiche}
 
 \subsubsection{A}
 

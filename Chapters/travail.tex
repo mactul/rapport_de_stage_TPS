@@ -80,9 +80,30 @@ Il n'est vraiment pas normal de passer autant de temps à envoyer des accusés d
 
 \subsection{Implémentation d'accusés de réception différés dans cloudflare/quiche}
 
-\subsubsection{A}
+\subsubsection{Découverte du problème}
 
-    \lipsum[1-2]
+Si cURL passe autant de temps à envoyer des paquets qu'à en recevoir, cela ne peut signifier qu'une seule chose; un accusé de réception est envoyé pour chaque paquet reçu.
+Cela peut sembler curieux dans la mesure où Quiche est supposément capable d'envoyer plusieurs accusés de réception en un unique message.
+
+Le fait est qu'en pratique, cette capacité n'est pas vraiment utilisée dans le cas nominal où les paquets arrivent un par un dans l'ordre. En effet, dès qu'un paquet est reçu, un accusé de réception est envoyé, avant d'avoir eu le temps de s'apercevoir qu'un autre paquet reçu entre temps nécessite également un accusé de réception.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/ack_not_delayed.png}
+    \caption{Les accusés de réceptions ne sont pas différés, 6 messages sont générés}
+\end{figure}
+
+Cette problématique n'est pas nouvelle, elle a déjà été rencontrée dans le développement de TCP et la solution a été de mettre en place des accusés de réception différés. L'idée étant qu'à la réception d'un paquet, plutôt que d'envoyer immédiatement un accusé de réception, il est plus intéressant d'attendre un cours instant pour voir si l'on reçoit d'autres paquets.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/ack_delayed.png}
+    \caption{Les accusés de réceptions sont différés, 4 messages sont générés}
+\end{figure}
+
+En introduisant des accusés de réception différés, on réduit le nombre de paquets sur le réseau, ce qui peut permettre d'augmenter le débit. Envoyer moins de paquets c'est aussi chiffrer moins de paquets car pour rappel, QUIC chiffre les accusés de réception. Or c'est le chiffrement des paquets qui consomme le plus de puissance de calcul.
+
+Bien sûr, cela vient avec un coût. En différant les accusés de réception, l'émetteur met plus de temps à se rendre compte qu'un message a été perdu et mettra plus de temps avant de renvoyer ces messages perdus. Tout est donc question de compromis, plus l'on diffère les accusés de réception et plus le protocole est efficace en conditions nominales, mais moins il devient réactif aux pertes de paquets.
 
 \subsubsection{B}
 

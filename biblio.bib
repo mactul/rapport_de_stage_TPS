@@ -1,3 +1,13 @@
+@online{cloudflare-quiche,
+  title = {Quiche, Savoury implementation of the QUIC transport protocol and HTTP/3.},
+  url   = {https://github.com/cloudflare/quiche}
+}
+
+@online{frochet-quiceh,
+  title = {Quiceh, An efficient implementation of QUIC VReverso.},
+  url   = {https://github.com/frochet/quiceh}
+}
+
 @article{tcp,
     author = {Vinton G. Cerf and Robert E. Kahn},
     title = "A Protocol for Packet Network Intercommunication",
@@ -15,7 +25,7 @@
   type         = {Internet-Draft},
   number       = {draft-frochet-quicwg-reverso-for-quic-00},
   year         = {2024},
-  month        = {sept},
+  month        = {09},
   url          = {https://www.ietf.org/archive/id/draft-frochet-quicwg-reverso-for-quic-00.html},
   note         = {Work in Progress}
 }
@@ -47,26 +57,16 @@
   type         = {Internet-Draft},
   number       = {draft-ietf-quic-ack-frequency-11},
   year         = {2025},
-  month        = {feb},
+  month        = {02},
   url          = {https://datatracker.ietf.org/doc/html/draft-ietf-quic-ack-frequency-11},
   note         = {Work in Progress}
 }
 
-@book{dirac,
-    title = {The Principles of Quantum Mechanics},
-    author = {Paul Adrien Maurice Dirac},
-    isbn = {9780198520115},
-    series = {International series of monographs on physics},
-    year = {1981},
-    publisher = {Clarendon Press},
-    keywords = {physics}
-}
-
-@inbook{knuth-fa,
-    author = "Donald E. Knuth",
-    title = "Fundamental Algorithms",
-    publisher = "Addison-Wesley",
-    year = "1973",
-    chapter = "1.2",
-    keywords  = "knuth,programming"
+@online{old-delayed-ack-branch,
+  author    = {Junho Choi},
+  title     = {Parsing ACK\_FREQUENCY frame and TP min\_ack\_delay},
+  year      = {2020},
+  month     = {02},
+  url       = {https://github.com/cloudflare/quiche/commit/b3e2bb4f7d2d8c0cc2c0e68c6912adfd042fa3f3},
+  note      = {Commit b3e2bb4f7d2d8c0cc2c0e68c6912adfd042fa3f3}
 }

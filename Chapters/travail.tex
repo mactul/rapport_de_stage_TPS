@@ -31,7 +31,7 @@ On peut contourner le problème en copiant systématiquement les buffers dans de
     \caption{\small{La différence de fonctionnement entre cloudflare/quiche et frochet/quiceh rend la queue de cURL inadaptée, car il faudrait copier les données pour les consommer.}}
 \end{figure}
 
-Pour mesurer un vrai gain de performance, la seule solution était de trouver un moyen de contourner la queue de cURL lorsqu'on utilise QUIC VReverso. A noter qu'il faut aussi garder l'ancienne queue et l'ancien fonctionnement pour le cas où le pair négocie QUIC V1 plutôt que QUIC VReverso.
+Pour mesurer un vrai gain de performance, la seule solution était de trouver un moyen de contourner la queue de cURL lorsqu'on utilise QUIC VReverso. À noter qu'il faut aussi garder l'ancienne queue et l'ancien fonctionnement pour le cas où le pair négocie QUIC V1 plutôt que QUIC VReverso.
 
 En pratique, en mode zéro copie, frochet/quiceh se comporte presque comme la queue de cURL. On peut donc simplement désactiver l'enregistrement dans la queue quand QUIC VReverso a été négocié et changer le moment où la queue est lue pour ne pas récupérer les données depuis la queue, mais depuis frochet/quiceh directement.
 Malheureusement, les données à cet endroit sont encore copiées pour être envoyées à une autre partie de cURL. Pour vraiment faire du zéro copie, il aurait fallu supprimer cette copie, mais cela impliquerait de changer presque l'intégralité de l'architecture de cURL, ce qui n'est pas envisageable, nous avons donc décidé d'en rester là et de mesurer les performances à partir de ce point.
@@ -45,7 +45,7 @@ Si on veut obtenir une mesure précise, du gain en performance, il va falloir tr
 
 \vspace{0.5cm}
 
-Sous Linux, il existe un utilitaire nommé $perf$ qui permet de lancer un programme tout en demandant au kernel de mesurer le nombre de cycles de CPUs pris par chaque fonction du programme.
+Sous Linux, il existe un utilitaire nommé $perf$ qui permet de lancer un programme tout en demandant au kernel de mesurer le nombre de cycles de processeur pris par chaque fonction du programme.
 Grâce à cet utilitaire, il est possible de faire des mesures qui d'une part ne sont plus dépendantes de la fréquence du processeur (qui change en permanence) ou de son utilisation par les autres logiciels sur l'ordinateur de mesure, et qui d'autre part permettent d'isoler très précisément le temps passé dans la fonction que l'on cherche à optimiser.
 
 $perf$ n'est pas un outil facile à utiliser, voici pour référence la commande utilisée pour monitorer cURL:
@@ -101,10 +101,78 @@ Cette problématique n'est pas nouvelle, elle a déjà été rencontrée dans le
     \caption{Les accusés de réceptions sont différés, 4 messages sont générés}
 \end{figure}
 
-En introduisant des accusés de réception différés, on réduit le nombre de paquets sur le réseau, ce qui peut permettre d'augmenter le débit. Envoyer moins de paquets c'est aussi chiffrer moins de paquets car pour rappel, QUIC chiffre les accusés de réception. Or c'est le chiffrement des paquets qui consomme le plus de puissance de calcul.
+En introduisant des accusés de réception différés, on réduit le nombre de paquets sur le réseau, ce qui peut permettre d'augmenter le débit. Envoyer moins de paquets c'est aussi chiffrer moins de paquets, car pour rappel, QUIC chiffre les accusés de réception. Or c'est le chiffrement des paquets qui consomme le plus de puissance de calcul.
 
-Bien sûr, cela vient avec un coût. En différant les accusés de réception, l'émetteur met plus de temps à se rendre compte qu'un message a été perdu et mettra plus de temps avant de renvoyer ces messages perdus. Tout est donc question de compromis, plus l'on diffère les accusés de réception et plus le protocole est efficace en conditions nominales, mais moins il devient réactif aux pertes de paquets.
+Bien sûr, cela vient avec un coût. En différant les accusés de réception, l'émetteur met plus de temps à se rendre compte qu'un message a été perdu et mettra plus de temps avant de renvoyer les messages perdus. Tout est donc question de compromis, plus l'on diffère les accusés de réception et plus le protocole est efficace en conditions nominales, mais moins il devient réactif aux pertes de paquets.
 
-\subsubsection{B}
+\subsubsection{QUIC et les accusés de réception différés}
 
-    \lipsum[1-2]
+Le protocole QUIC n'intègre pas à ce jour de mécanismes pour gérer les accusés de réception différés.
+Pour implémenter cela, il est nécessaire de pouvoir négocier cette fonctionnalité avec le pair, afin de configurer le délai et les conditions d'attente pour la communication.
+
+Il existe un draft, c'est-à-dire une proposition en attente d'une éventuelle révision pour entrer dans le standard, qui décrit précisément ce mécanisme pour QUIC\up{\cite{draft-ack-frequency}}.
+Ce draft est intitulé \guillemotleft QUIC Acknowledgment Frequency \guillemotright. Comme son nom l'indique, son principal changement proposé est l'ajout d'une nouvelle trame de contrôle permettant de négocier la fréquence des accusés de réception en temps réel pour s'adapter au réseau qui peut être changeant.
+
+Après quelques recherches, nous avons découvert qu'il existait un très vieux commit\up{\cite{old-delayed-ack-branch}} de Junho Choi qui avait commencé à implémenter une ancienne version de ce draft.
+Le travail sur cet ancien commit n'avait jamais été poursuivi ni intégré à la branche principale de cloudflare/quiche.
+
+Nous avons donc décidé de partir de ce commit comme base, en travaillant directement sur une copie de cloudflare/quiche plutôt que sur frochet/quiceh.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/junho_choi_commit.png}
+    \caption{Le commit de Junho Choi, relativement petit, mais très âgé.}
+\end{figure}
+
+\subsubsection{Un début difficile avec l'implémentation du draft.}
+
+Le code de cloudflare/quiche ayant énormément changé depuis le commit de Junho Choi, la première étape consistait à porter ce vieux commit vers la version la plus récente de cloudflare/quiche.
+Normalement cette opération se fait facilement avec la commande $git~merge$, éventuellement en corrigeant quelques conflits à la main.
+
+Malheureusement, ici, plus de cinq ans s'étaient écoulés depuis le commit et la structure de Quiche avait complètement été modifiée, les changements opérés par le commit ne s'intégraient plus du tout naturellement dans la nouvelle version de Quiche.
+
+Il nous a fallu une journée complète de travail pour porter manuellement toutes les lignes de code du commit de Junho Choi en essayant pour chacune de ces lignes de ne pas introduire de bugs lorsque nous les modifions pour les intégrer dans le nouveau code.
+
+\vspace{0.5cm}
+
+Comme nous pouvions nous y attendre, lors du lancement du code porté, rien ne fonctionnait. Certains problèmes étaient déjà présent dans le commit de Junho Choi. d'autres venaient d'une imcompatibilité au niveau de l'interaction entre l'ancien code et le nouveau, enfin une partie des problèmes n'étaient que des erreurs introduites par le portage manuel, prône aux erreurs.
+
+\vspace{0.5cm}
+
+Quoi qu'il en soit, il aura fallu une semaine pour traquer et réparer tous les problèmes et enfin avoir un code qui se lance et une communication qui s'établie.
+
+\vspace{0.5cm}
+
+Malheureusement, nous n'étions pas au bout de nos peines, car bien que la communication s'établissait, et que les accusés de réception semblaient bien être différés de la durée prévue, le débit était divisé par soixante. Télécharger 1Go prenait maintenant 2 minutes au lieu de 2 secondes.
+
+\subsubsection{Diagnostic du problème de débit.}
+
+Cette perte de performance si impressionnante était vraiment inquiétante. Nous n'avions pas encore implémenté tout le draft, nous n'avions notamment pas de gestion correcte des paquets désordonnés ou perdus, cela pouvait poser des problèmes, mais cela n'expliquait pas du tout une telle baisse des performances, alors que nous effectuions nos essais en local, donc avec aucune perte de paquets en théorie.
+
+\vspace{0.5cm}
+
+Cela pouvait être causé par de nombreuses choses, peut-être que chaque paquet était envoyé 60 fois, peut-être que le serveur refusait d'envoyer un deuxième paquet tant que le premier n'avait pas été acquitté, peut-être que le client ou bien le serveur se mettait en pause à des moments où il y avait des paquets à traiter ou peut-être était-ce autre chose ?
+
+\vspace{0.5cm}
+
+Nous pouvions déjà obtenir quelques informations à l'aide de $perf$ et $hotspot$.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/flamegraph_delayed_ack.png}
+    \caption{Flamegraph du téléchargement prenant 2 minutes.}
+\end{figure}
+
+Sur ce flamegraph, on voit que les accusés de réception sont bien différés, car les cycles de processeur de sendmsg sont divisés par 5, ce qui est la preuve qu'on envoie 5 fois moins d'accusés de réception.
+Cela nous permet d'affirmer que Quiche n'attend pas l'accusé de réception du premier message avant d'envoyer le deuxième.
+
+En cliquant sur les champs, on peut également voir que le nombre de cycles de processeur n'est pas anormalement élevé, ce qui invalide l'hypothèse selon laquelle tous les messages sont envoyés 60 fois.
+
+\vspace{0.5cm}
+
+En mesurant les temps d'inactivité du client et du serveur, nous avons remarqué que l'immense majorité du temps, les deux étaient juste bloqués en attente, sans faire le moindre calcul.
+
+Trouver la source du problème a été une tâche longue et difficile. Ce n'est qu'après avoir relu très minutieusement le draft pour la cinquième fois que nous avons compris que tous nos soucis étaient causé par le contrôle de congestion.
+
+\subsubsection{Le contrôle de congestion, un piège vicieux pour les accusés de réception différés.}
+

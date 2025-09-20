@@ -3,9 +3,9 @@ Malheureusement, TCP étant un protocole datant de 1974\up{\cite{tcp}}, il n'est
 
 QUIC est à la base d'HTTP/3, mais sa flexibilité lui permet aussi d'être utilisé pour des communications en conditions particulières, avec des taux de pertes importants ou des temps d'aller-retour très élevés; c'est pourquoi on retrouve QUIC utilisé pour certaines communications avec Mars.
 
-Une des implémentations open-source de QUIC parmi les plus utilisées est Quiche, une bibliothèque en langage Rust conçue par Cloudflare (pour éviter toute ambiguïté, on référera cette implémentation par le nom cloudflare/quiche). Quiche se veut être fiable et sécurisé, mais ses performances sont très en dessous des performances de TCP.
+Une des implémentations open-source de QUIC parmi les plus utilisées est Quiche, une bibliothèque en langage Rust conçue par Cloudflare (pour éviter toute ambiguïté, on référera cette implémentation par le nom cloudflare/quiche\up{\cite{cloudflare-quiche}}). Quiche se veut être fiable et sécurisé, mais ses performances sont très en dessous des performances de TCP.
 
-Florentin Rochet a créé Quiceh (qu'on référera par le nom frochet/quiceh) qui est une modification de Quiche censée améliorer ses performances. L'objectif de ce stage était d'intégrer frochet/quiceh à cURL, un client HTTP/3 et d'étudier les performances. La découverte d'un point bloquant dans les performances nous a amené à modifier directement cloudflare/quiche pour rajouter une nouvelle fonctionnalité, les accusés de réception différés.
+Florentin Rochet a créé Quiceh (qu'on référera par le nom frochet/quiceh\up{\cite{frochet-quiceh}}) qui est une modification de Quiche censée améliorer ses performances. L'objectif de ce stage était d'intégrer frochet/quiceh à cURL, un client HTTP/3 et d'étudier les performances. La découverte d'un point bloquant dans les performances nous a amené à modifier directement cloudflare/quiche pour rajouter une nouvelle fonctionnalité, les accusés de réception différés.
 
 \vspace{0.5cm}
 

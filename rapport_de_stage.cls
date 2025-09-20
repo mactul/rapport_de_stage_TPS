@@ -6,6 +6,7 @@
 \RequirePackage[utf8]{inputenc} %Caractères spéciaux
 \RequirePackage[section]{placeins}%Pour placement de section
 \RequirePackage[T1]{fontenc} %Quelques lettres qui sont pas inclus dans UTF-8
+\RequirePackage{courier}
 \RequirePackage{mathtools} %Paquet pour des équations et symboles mathématiques
 \RequirePackage{siunitx} %Pour écrire avec la notation scientifique (Ex.: \num{2e+9})
 \RequirePackage{float} %Pour placement d'images
@@ -21,6 +22,7 @@
 \RequirePackage{listings-rust}
 \RequirePackage[hidelinks]{hyperref}%Paquet pour insérer légendes dans des sous-figures comme Figure 1a, 1b
 \RequirePackage[left=3cm,right=3cm,top=3cm,bottom=5cm]{geometry} %Configuration de la page
+%\RequirePackage[skip=10pt plus1pt, indent=20pt]{parskip}
 
 \RequirePackage{lipsum} % pour remplir le template
 
@@ -31,6 +33,8 @@
 \RequirePackage{ragged2e} % justification au carré
 \RequirePackage{etoolbox}
 \RequirePackage{ifthen}
+
+\lstset{basicstyle=\fontfamily{pcr}\selectfont\small}
 
 \let\oldsection\section
 \RenewDocumentCommand{\section}{s o m}{%

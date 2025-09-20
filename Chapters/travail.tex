@@ -225,7 +225,7 @@ Si plus de 5 accusés de réception étaient en attente ou que 2 millisecondes s
 Dorénavant, la condition allait devoir prendre en compte le RTT, ce qui complique un petit peu la logique.
 
 \begin{center}
-    \begin{lstlisting}[language=Rust, caption={Première version de la condition d'envoi d'accusé de réception dépendante du RTT.}]
+    \begin{lstlisting}[language=Rust, label={lst:ack_send_condition}, caption={Première version de la condition d'envoi d'accusé de réception dépendante du RTT.}]
 if pkt_space.recv_pkt_need_ack.len() > 0 &&
     (ack_elicit_required ||
         pkt_space.ack_elicited &&
@@ -241,7 +241,7 @@ if pkt_space.recv_pkt_need_ack.len() > 0 &&
 
 Le code ci-dessus est une version tronquée et simplifiée du premier code que nous avions implémenté afin de tester si nous pouvions obtenir des performances normales si l'on ne différait jamais plus que le RTT.
 
-\vspace{0.5cm}
+\vspace{1cm}
 
 Prenons le pas à pas:
 \begin{itemize}
@@ -270,3 +270,105 @@ En comparant plus précisément les cycles du processeur, on peut s'apercevoir q
     \includegraphics[width=\textwidth]{figures/flamegraph_delayed_ack.png}
     \caption{L'impact de sendmsg se retrouve divisé par 3, pour un gain de 6\% sur la totalité du programme.}
 \end{figure}
+
+
+\subsubsection{Vers une implémentation fidèle du draft.}
+
+Afin d'obtenir une implémentation propre, qui ne soit pas uniquement adaptée à notre réseau local, il était crucial de pouvoir négocier les bons paramètres de délai entre les deux pairs.
+
+\vspace{0.5cm}
+
+Dans notre implémentation précédente, nous avions utilisé une mesure directe du RTT comme limite de délai. Le problème avec cette implémentation, c'est que c'est le pair qui envoi les accusés de réception qui choisit la durée de délai alors que c'est son pair qui va prendre des décisions basées sur la connaissance de ce délai.
+
+La bonne façon de faire n'est pas d'utiliser directement la mesure du RTT, mais plutôt le paramètre \verb|max_ack_delay| qui est transmis par le pair.
+
+La difficulté réside dans le fait que ce paramètre \verb|max_ack_delay| doit toujours resté lié au RTT, il faut donc que le pair le renvoie dès que le RTT change.
+
+\vspace{0.5cm}
+
+Les trames \verb|AckFrequency| sont faites précisément pour cela.\\
+Elles sont construites de cette manière\up{\cite{draft-ack-frequency}} :
+
+\begin{center}
+    \begin{lstlisting}
+ACK_FREQUENCY Frame {
+  Type (i) = 0xaf,
+  Sequence Number (i),
+  Ack-Eliciting Threshold (i),
+  Requested Max Ack Delay (i),
+  Reordering Threshold (i),
+}
+    \end{lstlisting}
+\end{center}
+
+\begin{itemize}
+\item Le type permet d'identifier qu'il s'agit d'une trame \verb|ACK_FREQUENCY|, car ce texte n'est pas transmis.
+\item \verb|Sequence Number| permet de ne pas tenir compte d'anciennes trames \verb|ACK_FREQUENCY| qui arriveraient plus tard.
+\item \verb|Ack-Eliciting Threshold| est le nombre de paquets maximal que l'on peut différer. C'était la valeur arbitraire de 5 paquets dans notre implémentation précédente.
+\item \verb|Requested Max Ack Delay| est la nouvelle valeur du paramètre \verb|max_ack_delay| qui a été décidée par le pair.
+\item \verb|Reordering Threshold| sera discuté plus tard, il a un rôle à jouer dans la gestion des paquets désordonnés.
+\end{itemize}
+
+\vspace{1cm}
+
+Le draft ne spécifiait pas bien quand envoyer les trames \verb|AckFrequency|, nous avons donc décidé arbitrairement d'envoyer une trame \verb|AckFrequency| si l'on détecte que le RTT a été modifié de plus de 50\%.
+
+Nous avons également arbitrairement choisi de régler le paramètre \texttt{Requested Max Ack Delay} à 3/4 du RTT mesuré.
+
+\vspace{0.5cm}
+
+Il a ensuite fallu modifier le code du \autoref{lst:ack_send_condition} pour utiliser \verb|max_ack_delay|, tout en faisant attention à bien désactiver les accusés de réception différés tant qu'aucune trame \verb|AckFrequency| n'a été reçue pour ne pas se baser sur une valeur aléatoire de \verb|max_ack_delay|.
+
+\vspace{0.5cm}
+
+À ce stade, nous commencions à avoir une implémentation opérable avec d'autres implémentations de QUIC qui supportent ce draft, toujours dans les conditions optimales où les paquets n'étaient pas désordonnés.
+
+Cependant, en envoyant systématiquement des trames \verb|AckFrequency| sans vérifier le support de cette extension par le pair, nous avions perdu la compatibilité avec les pairs n'implémentant pas le draft.
+
+\vspace{0.5cm}
+
+Pour éviter ceci, le draft propose d'utiliser un paramètre de transport nommé \verb|min_ack_delay|. Dans QUIC, les paramètres de transport inconnus sont simplement ignorés, il n'y a donc pas de risque à ajouter le paramètre \verb|min_ack_delay| à toutes les requêtes si l'on supporte l'extension des accusés de réception différés. Pour savoir si on peut envoyer une trame \verb|AckFrequency|, il suffit de vérifier si le pair à fourni le paramètre \verb|min_ack_delay|.
+
+\vspace{0.5cm}
+
+Le paramètre de transport \verb|min_ack_delay| rempli également une fonction, il permet d'éviter de sélectionner une valeur trop faible lorsque l'on calcule \texttt{Requested Max Ack Delay}.
+
+\vspace{0.5cm}
+
+Bien que \verb|min_ack_delay| fonctionne de façon relativement simple, son intégration a nécessité de modifier beaucoup de code dans cloudflare/quiche.
+En effet, il s'agit d'un paramètre configurable par l'utilisateur de la bibliothèque Quiche, et qui de plus active l'extension dès qu'il est spécifié. Il a donc fallu l'ajouter dans les différents objets de configuration et créer toutes les fonctions permettant de changer cette valeur. Au passage, le même travail a été fait pour les champs \texttt{Ack-Eliciting Threshold} et \texttt{Reordering Threshold}.
+
+\vspace{0.5cm}
+
+Il nous restait une dernière fonctionnalité à implémenter avant de gérer les cas particuliers que sont les paquets perdus ou désordonnés.
+Tous les accusés de réception de toutes les trames ne peuvent pas être différés sans causer de gros problèmes. En particulier QUIC implémente des trames nommées \texttt{Ping} qui servent à mesurer le temps d'aller-retour d'un paquet. Si ces trames sont différées, toute mesure du RTT est faussée.
+
+Le draft propose l'ajout d'une nouvelle trame nommée \texttt{ImmediateAck}, cette trame ne contient aucune donnée, mais dès qu'elle est reçue, un accusé de réception pour tous les paquets en attente doit être immédiatement envoyé. Il suffit ensuite de toujours envoyer une trame ImmediateAck après une trame Ping pour assurer que le ping recevra une réponse instantanée.
+
+\vspace{0.5cm}
+
+l'implémentation des trames ImmediateAck a rajouté un nouvel état \guillemotleft accusé immédiat en attente \guillemotright, ce qui a encore compliqué la condition d'envoi des accusés de réception, il a donc été nécessaire de la découper en plusieurs morceaux pour la lisibilité.
+
+\begin{center}
+    \begin{lstlisting}[language=Rust, caption={Version finale de la condition d'envoi d'accusé de réception.}]
+let mut should_delay_ack = false;
+if let Some(freq) = &self.recv_ack_frequency {
+    should_delay_ack = epoch == packet::Epoch::Application &&
+        (pkt_space.recv_pkt_need_ack.len() as u64) <
+            freq.packet_tolerance &&
+        self.last_send_ack_instant.elapsed() <
+            self.local_transport_params.max_ack_delay;
+}
+
+if pkt_space.recv_pkt_need_ack.len() > 0 &&
+    (ack_elicit_required ||
+        self.immediate_ack_pending ||
+        pkt_space.ack_elicited && !should_delay_ack) &&
+    // truncated for readability
+{
+    // send the ack
+}
+    \end{lstlisting}
+\end{center}
+
+\subsubsection{Gérer les paquets perdus ou désordonnés.}

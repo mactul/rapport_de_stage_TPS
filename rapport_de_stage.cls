@@ -18,6 +18,7 @@
 \RequirePackage{fancyhdr}
 \RequirePackage{url}
 \RequirePackage{listings}
+\RequirePackage{listings-rust}
 \RequirePackage[hidelinks]{hyperref}%Paquet pour insérer légendes dans des sous-figures comme Figure 1a, 1b
 \RequirePackage[left=3cm,right=3cm,top=3cm,bottom=5cm]{geometry} %Configuration de la page
 

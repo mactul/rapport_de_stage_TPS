@@ -182,6 +182,12 @@ Pour comprendre ce que fait le contrôle de congestion, il faut comprendre d'où
 Sur internet, tous les équipements sont branchés physiquement les uns aux autres, généralement avec de la fibre optique. Ces liens sont très fiables et il est hautement improbable qu'un paquet soit perdu à cause du lien physique. En revanche, si un routeur est surchargé et ne parviens plus à traiter les paquets suffisamment vite, il va simplement jeter les paquets qu'il n'a pas le temps de gérer.
 Presque tous les paquets perdus sur internet viennent de là, des routeurs saturés qui jettent des paquets.
 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/routers_dropping_packets.png}
+    \caption{Les routeurs sont responsables des pertes de paquets lorsqu'ils sont saturés.}
+\end{figure}
+
 Pour QUIC ou TCP, un paquet jeté génère un gros problème de performance, car il va falloir attendre l'information que le paquet n'est pas arrivé, puis il va falloir le renvoyer. Toute la communication est bloquée lors de cette phase.
 
 Il est donc crucial pour QUIC et TCP de s'assurer de ne pas saturer les routeurs. Pour ce faire, le contrôle de congestion va réduire le débit de l'envoyeur dès qu'il détecte qu'un paquet est perdu.
@@ -192,3 +198,75 @@ Le contrôle de congestion de QUIC est un peu plus agressif que celui de TCP et 
 
 Autrement dit, en différant l'envoi des accusés de réception, nous avons indirectement ordonné au contrôle de congestion de QUIC de réduire son débit.
 Ceci explique parfaitement le fait que le débit ait été finalement divisé par 60.
+
+\subsubsection{Différer les accusés de réception oui, mais pas de trop.}
+
+Pour éviter que le contrôle de congestion ne réduise le débit, la solution est de s'assurer que les accusés de réception soient toujours envoyés juste assez rapidement pour que le contrôle de congestion ne déclenche pas de réduction de débit.
+
+Le contrôle de congestion se base sur le RTT (Round Trip Time) qui est le temps d'aller-retour d'un paquet entre le client et le serveur. Pour simplifier, si l'accusé de réception met plus de temps que le RTT que l'on mesure à intervalles réguliers, alors le contrôle de congestion réduit le débit.
+Si l'on s'assure d'envoyer au moins un accusé de réception par RTT, alors le contrôle de congestion ne devrait plus réduire le débit.
+
+On pourrait croire qu'en faisant cela on retombe juste dans l'ancien modèle où un accusé de réception va être envoyé pour chaque paquet mais non.
+La figure ci-dessous montre bien que plusieurs paquets peuvent être reçus durant un unique délai RTT, et plus important encore, trois paquets sont acquittés en même temps alors que le dernier acquittement a été reçu il y a moins de temps que le RTT.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/ack_delayed_before_rtt.png}
+    \caption{3 paquets sont acquittés en même temps, mais le temps entre la réception de 2 accusés de réception est bien inférieure au RTT.}
+\end{figure}
+
+Sur cette figure, on peut également comprendre qu'il faut qu'un accusé de réception soit en train d'être envoyé pour pouvoir commencer à différer les accusés de réception. En pratique le premier paquet n'a pas vraiment besoin d'être acquitté immédiatement, parce que le contrôle de congestion attendra plus que le RTT s'il sait pertinemment qu'aucun paquet n'est attendu. En revanche, on retrouvera une situation similaire quand des paquets sont désordonnés et il faudra tenir compte de cela pour éviter une réponse du contrôle de congestion.
+
+\subsubsection{Implémentation de ces considérations dans cloudflare/quiche.}
+
+Jusqu'à présent, la condition d'envoi d'accusés de réception était restée très simple.
+Si plus de 5 accusés de réception étaient en attente ou que 2 millisecondes s'étaient écoulées depuis le dernier accusé de réception, on envoyait un paquet contenant tous les accusés de réception cumulés.
+
+Dorénavant, la condition allait devoir prendre en compte le RTT, ce qui complique un petit peu la logique.
+
+\begin{center}
+    \begin{lstlisting}[language=Rust, caption={Première version de la condition d'envoi d'accusé de réception dépendante du RTT.}]
+if pkt_space.recv_pkt_need_ack.len() > 0 &&
+    (ack_elicit_required ||
+        pkt_space.ack_elicited &&
+            (pkt_space.recv_pkt_need_ack.len() >= 5 ||
+                self.last_send_ack_instant.elapsed() >
+                    path.recovery.rtt())) &&
+    // truncated for readability
+{
+    // send the ack
+}
+    \end{lstlisting}
+\end{center}
+
+Le code ci-dessus est une version tronquée et simplifiée du premier code que nous avions implémenté afin de tester si nous pouvions obtenir des performances normales si l'on ne différait jamais plus que le RTT.
+
+\vspace{0.5cm}
+
+Prenons le pas à pas:
+\begin{itemize}
+    \item Premièrement, il faut s'assurer qu'il y ait au moins un accusé de réception en attente, c'est le role de \verb|pkt_space.recv_pkt_need_ack.len() > 0|
+    \item Ensuite, si la variable \verb|ack_elicit_required| est à \verb|true|, cela signifie que l'on s'apprête à envoyer une trame ping, dans ce cas il ne faut pas différer les accusés de réception.
+    \item Il nous faut encore vérifier que \verb|pkt_space.ack_elicited| vaut \verb|true|, autrement il ne faudrait pas envoyer d'accusé de réception (cela peut arriver par exemple pour le tout dernier paquet de fermeture de la connexion.).
+    \item Enfin, l'accusé de réception ne sera envoyé que si au moins 5 autres sont en attente ou bien si cela fait plus de RTT microsecondes que le dernier accusé de réception a été envoyé.
+\end{itemize}
+
+Un petit mot sur \verb|path.recovery.rtt()|, il s'agit en fait d'une mesure du RTT stabilisé qui prend en compte le dernier RTT mesuré, mais aussi un petit peu les précédents RTT. C'est cette même mesure qui est utilisée par le contrôle de congestion, à la différence que le contrôle de congestion attend toujours un peu plus que cette mesure.
+
+\subsubsection{Un premier résultat encourageant.}
+
+La version que nous venions d'implémenter ne suivait pas correctement le draft; nous avions écrit toutes les valeurs en dur dans le code au lieu de les négocier et nous ne gérions pas les paquets désordonnés. Toutefois, cette version nous permettait de tester si nous pouvions au moins différer des accusés de réception et réduire la consommation du processeur dans un environnement optimal, c'est-à-dire en local.
+
+\vspace{0.5cm}
+
+Cette version s'est avéré être une vraie réussite sur ce point.
+D'une part, nous sommes enfin redescendus à 2 secondes pour télécharger 1Go au lieu de 2 minutes et surtout le flamegraph est sans appel, nous avons bien réussi à réduire l'impact de sendmsg. On peut voir sur la figure ci-dessous que sendmsg est significativement plus petit que recvmmsg.
+En comparant plus précisément les cycles du processeur, on peut s'apercevoir qu'on a économisé environ 6\% de puissance de calcul sur tout le téléchargement.
+
+6\% peuvent paraître décevant, mais il faut rappeler qu'il s'agit d'un logiciel qui est utilisé des millions de fois par jour pour faire des requêtes web, 6\% d'énergie économisé sur chacune de ces requêtes représente une énorme quantité d'énergie. C'est donc un résultat très prometteur qui justifie vraiment de continuer dans cette voie.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/flamegraph_delayed_ack.png}
+    \caption{L'impact de sendmsg se retrouve divisé par 3, pour un gain de 6\% sur la totalité du programme.}
+\end{figure}

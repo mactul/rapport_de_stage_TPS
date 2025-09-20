@@ -176,3 +176,19 @@ Trouver la source du problème a été une tâche longue et difficile. Ce n'est 
 
 \subsubsection{Le contrôle de congestion, un piège vicieux pour les accusés de réception différés.}
 
+Le contrôle de congestion est une fonctionnalité importante de QUIC, qui est directement héritée de TCP. Le contrôle de congestion sert à améliorer les débits en assurant de ne jamais congestionner le lien.
+Pour comprendre ce que fait le contrôle de congestion, il faut comprendre d'où viennent les pertes de paquets sur un réseau IP traditionnel.
+
+Sur internet, tous les équipements sont branchés physiquement les uns aux autres, généralement avec de la fibre optique. Ces liens sont très fiables et il est hautement improbable qu'un paquet soit perdu à cause du lien physique. En revanche, si un routeur est surchargé et ne parviens plus à traiter les paquets suffisamment vite, il va simplement jeter les paquets qu'il n'a pas le temps de gérer.
+Presque tous les paquets perdus sur internet viennent de là, des routeurs saturés qui jettent des paquets.
+
+Pour QUIC ou TCP, un paquet jeté génère un gros problème de performance, car il va falloir attendre l'information que le paquet n'est pas arrivé, puis il va falloir le renvoyer. Toute la communication est bloquée lors de cette phase.
+
+Il est donc crucial pour QUIC et TCP de s'assurer de ne pas saturer les routeurs. Pour ce faire, le contrôle de congestion va réduire le débit de l'envoyeur dès qu'il détecte qu'un paquet est perdu.
+
+\vspace{0.5cm}
+
+Le contrôle de congestion de QUIC est un peu plus agressif que celui de TCP et l'une de ses spécificités est qu'il peut réduire le débit avant même qu'un seul paquet soit perdu s'il détecte qu'un accusé de réception a mis un temps plus long que celui attendu à revenir.
+
+Autrement dit, en différant l'envoi des accusés de réception, nous avons indirectement ordonné au contrôle de congestion de QUIC de réduire son débit.
+Ceci explique parfaitement le fait que le débit ait été finalement divisé par 60.

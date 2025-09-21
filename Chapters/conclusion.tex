@@ -1,0 +1,10 @@
+QUIC est une technologie prometteuse qui peut vraiment apporter de la sécurité sur internet, rendre les communications plus flexibles et pourrait peut-être même un jour apporter un gain de performance par rapport à TCP grâce à tous ses mécanismes d'optimisation.
+
+Les implémentations de QUIC aujourd'hui manquent encore de finitions pour pouvoir offrir des performances similaires à TCP.
+Toutefois, nos recherches montrent qu'il est encore possible de gagner en performance sur de nombreux points.
+
+\vspace{0.5cm}
+
+En implémentant les accusés de réception différés dans Quiche, nous avons réussi à réduire de façon significative la consommation d'énergie de Quiche. Cela représente une étape importante sur la route de l'amélioration des performances; je suis très fier d'avoir pu contribuer à l'avancement de cette technologie.
+
+Malheureusement notre contribution ne se suffit pas à elle seule, pour qu'elle soit vraiment utile il faudrait qu'elle soit couplée à une modification du contrôle de congestion de Quiche. Un prochain projet de recherche pourrait implémenter ces changements, en s'inspirant des solutions proposées sur quinn\up{\cite{quinn-spurious-loss-recovery}} ou quicly\up{\cite{quicly-adaptative-loss-threshold}}. En faisant cela, il devrait être possible de débloquer un gain en performance significatif.

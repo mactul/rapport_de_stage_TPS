@@ -194,7 +194,7 @@ Il est donc crucial pour QUIC et TCP de s'assurer de ne pas saturer les routeurs
 
 \vspace{0.5cm}
 
-Le contrôle de congestion de QUIC est un peu plus agressif que celui de TCP et l'une de ses spécificités est qu'il peut réduire le débit avant même qu'un seul paquet soit perdu s'il détecte qu'un accusé de réception a mis un temps plus long que celui attendu à revenir.
+Le contrôle de congestion de QUIC est un peu plus agressif que celui de TCP et l'une de ses spécificités est qu'il peut réduire le débit avant même qu'un seul paquet ne soit perdu s'il détecte qu'un accusé de réception a mis un temps plus long que celui attendu à revenir.
 
 Autrement dit, en différant l'envoi des accusés de réception, nous avons indirectement ordonné au contrôle de congestion de QUIC de réduire son débit.
 Ceci explique parfaitement le fait que le débit ait été finalement divisé par 60.
@@ -203,7 +203,8 @@ Ceci explique parfaitement le fait que le débit ait été finalement divisé pa
 
 Pour éviter que le contrôle de congestion ne réduise le débit, la solution est de s'assurer que les accusés de réception soient toujours envoyés juste assez rapidement pour que le contrôle de congestion ne déclenche pas de réduction de débit.
 
-Le contrôle de congestion se base sur le RTT (Round Trip Time) qui est le temps d'aller-retour d'un paquet entre le client et le serveur. Pour simplifier, si l'accusé de réception met plus de temps que le RTT que l'on mesure à intervalles réguliers, alors le contrôle de congestion réduit le débit.
+Le contrôle de congestion se base sur le RTT (Round Trip Time) qui est le temps d'aller-retour d'un paquet entre le client et le serveur. Pour simplifier, si l'accusé de réception met plus de temps que le RTT que l'on mesure à intervalles réguliers, alors le contrôle de congestion réduit le débit. Il y a bien sûr des marges de sécurité à ajouter, mais elles ne changent rien au principe.
+
 Si l'on s'assure d'envoyer au moins un accusé de réception par RTT, alors le contrôle de congestion ne devrait plus réduire le débit.
 
 On pourrait croire qu'en faisant cela on retombe juste dans l'ancien modèle où un accusé de réception va être envoyé pour chaque paquet mais non.
@@ -215,7 +216,7 @@ La figure ci-dessous montre bien que plusieurs paquets peuvent être reçus dura
     \caption{3 paquets sont acquittés en même temps, mais le temps entre la réception de 2 accusés de réception est bien inférieure au RTT.}
 \end{figure}
 
-Sur cette figure, on peut également comprendre qu'il faut qu'un accusé de réception soit en train d'être envoyé pour pouvoir commencer à différer les accusés de réception. En pratique le premier paquet n'a pas vraiment besoin d'être acquitté immédiatement, parce que le contrôle de congestion attendra plus que le RTT s'il sait pertinemment qu'aucun paquet n'est attendu. En revanche, on retrouvera une situation similaire quand des paquets sont désordonnés et il faudra tenir compte de cela pour éviter une réponse du contrôle de congestion.
+Sur cette figure, on peut également comprendre qu'il faut qu'un accusé de réception soit en train d'être envoyé pour pouvoir commencer à différer les accusés de réception. En pratique le premier paquet n'a pas vraiment besoin d'être acquitté immédiatement, parce que le contrôle de congestion attendra plus que le RTT s'il sait pertinemment qu'aucun paquet n'est attendu.
 
 \subsubsection{Implémentation de ces considérations dans cloudflare/quiche.}
 
@@ -372,3 +373,73 @@ if pkt_space.recv_pkt_need_ack.len() > 0 &&
 \end{center}
 
 \subsubsection{Gérer les paquets perdus ou désordonnés.}
+
+QUIC est un protocole construit pour la fiabilité, mais notre implémentation jusqu'à lors n'a rien de fiable.
+
+Premièrement, si une trame \texttt{AckFrequency} est perdue, elle ne sera pas renvoyée, la valeur du paramètre \verb|max_ack_delay| ne sera alors plus en accord avec le RTT du lien et il faudra attendre que le RTT change à nouveau de 50\% pour qu'une nouvelle trame \texttt{AckFrequency} soit renvoyée.
+
+Beaucoup de trames qui nécessitent une retransmission dans QUIC doivent être sauvegardées au moment de l'envoi pour être éventuellement réémises plus tard.
+Avec les trames \texttt{AckFrequency}, nous pouvons simplifier cette partie en recalculant une nouvelle trame \texttt{AckFrequency} chaque fois que l'une d'elle est perdue. En effet, les trames \texttt{AckFrequency} retransmises n'ont pas besoin d'êtres identiques à la précédente; le numéro de séquence peut être différent et le délai demandé dans la trame peut être également différent tant qu'il est en accord avec l'état du réseau à ce moment.
+
+\vspace{1cm}
+
+Nous arrivons dans la partie la plus délicate de l'implémentation du draft, la gestion des paquets désordonnés.
+
+\vspace{0.5cm}
+
+Plus haut, nous avons discuté du mécanisme pour la détection préventive des pertes qui nous force à avoir \verb|max_ack_delay| plus petit que le RTT.
+Il existe un autre mécanisme de détection des pertes qui se base directement sur \verb|max_ack_delay|.
+
+\vspace{0.5cm}
+
+Le principe, illustré par la figure ci-dessous est que si l'accusé de réception d'un paquet n'arrive pas avant la date d'émission du paquet, plus \verb|max_ack_delay|, plus le RTT, plus une marge, alors le paquet est considéré comme perdu.
+
+On notera bien que le \verb|max_ack_delay| est représenté plus petit que le RTT, car c'est ce que nous avons imposé précédemment.
+Ici il est représenté beaucoup plus petit que le RTT pour insister sur le fait que c'est une valeur différente mais en pratique on cherchera à le rendre le plus proche possible du RTT tout en s'assurant qu'il soit toujours plus petit.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/PTO.png}
+    \caption{Le paquet n°2 n'est pas déclaré perdu, car son accusé de réception arrive dans un temps normal après l'émission du paquet.}
+\end{figure}
+
+Si les paquets arrivent dans le désordre, c'est a priori que certains paquets ont été retardé.
+Différer ces accusés de réception peut s'avérer dangereux. La figure ci-dessous montre un cas où si l'accusé de réception du paquet n°2 est différé, le paquet sera déclaré perdu.
+
+Pourtant dans cette exemple, le paquet n°2 est bien acquitté selon les règles que nous avons établies précédemment. Il est acquitté peu de temps après l'envoi du dernier accusé de réception. Seulement comme le RTT de ce paquet est plus élevé que le RTT estimé grâce aux paquet n°1 et 3, dut au fait que ce paquet spécifique ait été retardé en transit, par malchance, le fait de l'avoir retardé encore un peu plus le fait arriver juste après la fin du temporisateur qui le déclare perdu.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/out_of_order_after_acked.png}
+    \caption{Le paquet n°2 sera déclaré perdu s'il est différé.}
+\end{figure}
+
+Ce que nous montre cet exemple, c'est que si un paquet arrive avec un numéro de séquence inférieur au dernier numéro acquitté, il faut l'acquitter immédiatement pour essayer de ne pas aggraver un délai que le réseau aurait déjà appliqué à ce paquet.
+
+\vspace{0.5cm}
+
+Si un paquet 
+
+\newpage
+
+\subsection{Contribution à KDAB/hotspot.}
+
+Nous avons beaucoup utilisé hotspot, l'outil de KDAB\up{\cite{hotspot}} pour générer des flamegraphs au cours de ce stage.
+
+Lors d'un des très nombreux tests de performance que nous avons éffectué, j'ai remarqué un détail curieux sur hotspot.
+Sur la page d'accueil du logiciel, il y a un petit résumé de la commande exécutée, avec le temps pris par la commande.
+Il y a le temps total, le temps passé en attente passive (Off CPU) et le temps passé à calculer (On CPU).
+
+J'ai remarqué que lorsque le temps est compris entre 1 milliseconde et 999 millisecondes, les premiers chiffres derrière la virgule étaient suspicieusement les mêmes que les chiffres des unités.
+Par exemple, nous pouvions avoir 231.231745ms ou 912.912267ms.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textheight]{figures/hotspot_bug.png}
+    \caption{Les temps affichés sur hotspot sont suspicieux.}
+\end{figure}
+
+Le code d'hotspot étant OpenSource, j'ai décidé d'aller voir si je ne pouvais pas corriger le problème.
+
+Il se trouve qu'il manquait simplement un modulo dans le calcul des chiffres après la virgule pour l'affichage des millisecondes.
+J'ai pu corriger le problème, j'en ai également profité pour rajouter des tests unitaires pour cette fonction et j'ai eu la chance d'avoir ma contribution acceptée par les mainteneurs d'hotspot\up{[\ref{hotspot-fix-commit}]}. Cela fixait un bug qui avait été dans le logiciel depuis près de 8 ans\up{\cite{hotspot-bug-commit}}.

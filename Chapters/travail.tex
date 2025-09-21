@@ -418,7 +418,29 @@ Ce que nous montre cet exemple, c'est que si un paquet arrive avec un numéro de
 
 \vspace{0.5cm}
 
-Si un paquet 
+Dans le cas où l'on reçoit un paquet d'un numéro de séquence plus grand que celui attendu, nous pouvons dans une certaine limite attendre de recevoir les paquets précédents avant d'envoyer un accusé de réception.
+
+C'est pour cela que les trames \texttt{AckFrequency} possèdent un champ \texttt{Reordering Threshold}, il sert à indiquer l'écart maximal que l'on peut accepter entre le numéro du paquet attendu et le numéro du paquet reçu, avant que l'on envoie immédiatement des accusés de réception.
+
+On notera qu'un \texttt{Reordering Threshold} à 1 signifie que tout paquet désordonné doit être immédiatement acquitté, par ailleurs, la valeur de 0 est réservée pour indiquer qu'il n'y a pas de limite à la taille de l'écart que l'on peut gérer.
+
+\vspace{0.5cm}
+
+L'implémentation se complexifie légèrement quand \texttt{Reordering Threshold} est suffisamment grand pour permettre plusieurs trous disjoints dans la liste des paquets en attente d'acquittement. Il faut maintenir une liste des trous, tout en assurant qu'un attaquant ne peut pas artificiellement faire grandir cette liste au-delà de limites raisonnables pour provoquer une panne du service.
+
+\subsubsection{Performances finales}
+
+Une fois l'implémentation du draft terminée, nous avons mesuré à nouveau les performances, le plus précisément possible.
+Nous avons bien noté une baisse du nombre de cycles de processeur d'environ 6 à 10\% pour le téléchargement d'un fichier de 2Go.
+
+En revanche nous avons également noté que le téléchargement de 2Go sur un réseau réel (Namur - Strasbourg) était 10\% plus long que la normale. cela signifie que le contrôle de congestion réagit toujours légèrement à quelques accusés de réception qui seraient trop différés.
+Il semble que ce soit un problème récurrent dont souffrent les autres implémentations de QUIC ayant implémenté les accusés de réception différés. Des solutions existent, elles consistent à modifier le comportement du contrôle de congestion pour qu'il soit plus résilient au retour d'un paquet. Implémenter ces solutions dans cloudflare/quiche pourrait être le sujet d'un autre projet de recherche.
+
+\subsubsection{Contribution sur le dépôt git de cloudflare/quiche.}
+
+Après beaucoup d'ajustements, de nettoyage du code et une réécriture totale de l'historique des commits pour un suivi plus aisé de la démarche intellectuelle, nous arrivons à une respectable proposition de 871 changements, que nous avons déposé sur le dépôt git de cloudflare/quiche sous la forme d'un brouillon à réviser\up{\ref{cloudflare-pr}}.
+
+À ce jour, ce code est toujours en attente d'une relecture par les développeurs de Cloudflare.
 
 \newpage
 

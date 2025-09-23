@@ -7,8 +7,8 @@ L'objectif étant de créer un protocole très flexible s'adaptant à toutes les
 
 Cependant, les implémentations de QUIC étant encore jeunes, leurs performances sont encore loin des implémentations éprouvées de TCP.
 
-Nous nous sommes intéressés l'une d'elles, Quiche. Après avoir mesuré l'impact d'une version améliorée de Quiche par Florentin Rochet sur cURL, un client HTTP; nous avons réussi à réduire la puissance de calcul consommée par Quiche en ajoutant une nouvelle fonctionnalité.
-Nous avons obtenu une réduction significative de l'ordre de 6 à 10\% de la consommation énergétique de Quiche, mais malheureusement la gestion actuelle de certaines erreurs de transmission dans Quiche entre en conflit avec la fonctionnalité que nous avons ajouté et fait chuter le débit d'environ 10\% ce qui empêche de profiter pleinement de la fonctionnalité que nous avons ajouté.
+Nous nous sommes intéressés à l'une d'elles, Quiche. Après avoir mesuré l'impact d'une version améliorée de Quiche par Florentin Rochet sur cURL, un client HTTP; nous avons réussi à réduire la puissance de calcul consommée par Quiche en ajoutant une nouvelle fonctionnalité.
+Nous avons obtenu une réduction significative de l'ordre de 6 à 10\% de la consommation énergétique de Quiche, mais malheureusement la gestion actuelle de certaines erreurs de transmission dans Quiche entre en conflit avec la fonctionnalité que nous avons ajouté et fait chuter le débit d'environ 10\%, ce qui empêche de profiter pleinement de la fonctionnalité que nous avons ajouté.
 
 \vspace*{\stretch{1}}
 
